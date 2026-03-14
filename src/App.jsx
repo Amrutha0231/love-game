@@ -250,20 +250,72 @@ const QUESTIONS = [
   "What's one thing I'm really proud of? 🌟",
 ];
 
-// ─── STORAGE HELPERS ────────────────────────────────────────────────────────
-const STORAGE_KEY = "loveGame_v2";
+// ─── STORAGE HELPERS (JSONBin.io) ───────────────────────────────────────────
+const JSONBIN_API_KEY = "$2a$10$2x/LYGCPWKWbysY6lk/0petRKzL3ET.8N.yelpqTkW0IuEz1haMjq";
+const BINS = {};
 
 async function saveGame(gameCode, data) {
   try {
-    await window.storage.set(`${STORAGE_KEY}:${gameCode}`, JSON.stringify(data), true);
-  } catch (e) { console.error(e); }
+    const key = `lovegame_${gameCode}`;
+    if (BINS[key]) {
+      // Update existing bin
+      await fetch(`https://api.jsonbin.io/v3/b/${BINS[key]}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY },
+        body: JSON.stringify(data),
+      });
+    } else {
+      // Create new bin
+      const res = await fetch("https://api.jsonbin.io/v3/b", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Master-Key": JSONBIN_API_KEY,
+          "X-Bin-Name": key,
+          "X-Bin-Private": "false",
+        },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      BINS[key] = json.metadata?.id;
+      // Store bin ID in localStorage so we can find it later
+      localStorage.setItem(`binid_${gameCode}`, json.metadata?.id);
+    }
+  } catch (e) { console.error("saveGame error", e); }
 }
 
 async function loadGame(gameCode) {
   try {
-    const r = await window.storage.get(`${STORAGE_KEY}:${gameCode}`, true);
-    return r ? JSON.parse(r.value) : null;
-  } catch (e) { return null; }
+    const key = `lovegame_${gameCode}`;
+    // Try to get bin ID from memory or localStorage
+    let binId = BINS[key] || localStorage.getItem(`binid_${gameCode}`);
+    if (binId) {
+      BINS[key] = binId;
+      const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
+        headers: { "X-Master-Key": JSONBIN_API_KEY },
+      });
+      const json = await res.json();
+      return json.record || null;
+    }
+    // Search for bin by name
+    const res = await fetch(`https://api.jsonbin.io/v3/b?name=${key}`, {
+      headers: { "X-Master-Key": JSONBIN_API_KEY },
+    });
+    const results = await res.json();
+    if (results && results.length > 0) {
+      const id = results[0]?.id || results[0]?.record?.id;
+      if (id) {
+        BINS[key] = id;
+        localStorage.setItem(`binid_${gameCode}`, id);
+        const r2 = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`, {
+          headers: { "X-Master-Key": JSONBIN_API_KEY },
+        });
+        const j2 = await r2.json();
+        return j2.record || null;
+      }
+    }
+    return null;
+  } catch (e) { console.error("loadGame error", e); return null; }
 }
 
 function makeCode() {
