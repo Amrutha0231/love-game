@@ -252,60 +252,53 @@ const QUESTIONS = [
 
 // ─── STORAGE HELPERS (JSONBin.io) ───────────────────────────────────────────
 const JSONBIN_API_KEY = "$2a$10$2x/LYGCPWKWbysY6lk/0petRKzL3ET.8N.yelpqTkW0IuEz1haMjq";
-const BINS = {};
 
 async function saveGame(gameCode, data) {
   try {
-    const key = `lovegame_${gameCode}`;
-    if (BINS[key]) {
-      // Update existing bin
-      await fetch(`https://api.jsonbin.io/v3/b/${BINS[key]}`, {
+    const binId = localStorage.getItem(`binid_${gameCode}`);
+    if (binId) {
+      await fetch(`https://api.jsonbin.io/v3/b/${binId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json", "X-Master-Key": JSONBIN_API_KEY },
         body: JSON.stringify(data),
       });
     } else {
-      // Create new bin
       const res = await fetch("https://api.jsonbin.io/v3/b", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "X-Master-Key": JSONBIN_API_KEY,
-          "X-Bin-Name": key,
+          "X-Bin-Name": `lovegame_${gameCode}`,
           "X-Bin-Private": "false",
         },
         body: JSON.stringify(data),
       });
       const json = await res.json();
-      BINS[key] = json.metadata?.id;
-      // Store bin ID in localStorage so we can find it later
-      localStorage.setItem(`binid_${gameCode}`, json.metadata?.id);
+      const id = json.metadata?.id;
+      if (id) localStorage.setItem(`binid_${gameCode}`, id);
     }
   } catch (e) { console.error("saveGame error", e); }
 }
 
 async function loadGame(gameCode) {
   try {
-    const key = `lovegame_${gameCode}`;
-    // Try to get bin ID from memory or localStorage
-    let binId = BINS[key] || localStorage.getItem(`binid_${gameCode}`);
+    const binId = localStorage.getItem(`binid_${gameCode}`);
     if (binId) {
-      BINS[key] = binId;
       const res = await fetch(`https://api.jsonbin.io/v3/b/${binId}/latest`, {
         headers: { "X-Master-Key": JSONBIN_API_KEY },
       });
       const json = await res.json();
       return json.record || null;
     }
-    // Search for bin by name
-    const res = await fetch(`https://api.jsonbin.io/v3/b?name=${key}`, {
-      headers: { "X-Master-Key": JSONBIN_API_KEY },
+    // Joining player: search by name
+    const res = await fetch(`https://api.jsonbin.io/v3/b?name=lovegame_${gameCode}`, {
+      headers: { "X-Master-Key": JSONBIN_API_KEY, "X-Bin-Meta": "false" },
     });
     const results = await res.json();
-    if (results && results.length > 0) {
-      const id = results[0]?.id || results[0]?.record?.id;
+    const arr = Array.isArray(results) ? results : [];
+    if (arr.length > 0) {
+      const id = arr[0]?.id || arr[0]?.metadata?.id;
       if (id) {
-        BINS[key] = id;
         localStorage.setItem(`binid_${gameCode}`, id);
         const r2 = await fetch(`https://api.jsonbin.io/v3/b/${id}/latest`, {
           headers: { "X-Master-Key": JSONBIN_API_KEY },
